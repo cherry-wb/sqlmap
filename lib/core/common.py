@@ -571,7 +571,7 @@ def paramToDict(place, parameters=None):
                         warnMsg += "so sqlmap could be able to run properly"
                         logger.warn(warnMsg)
 
-                        message = "Are you sure you want to continue? [y/N] "
+                        message = "are you sure you want to continue? [y/N] "
                         test = readInput(message, default="N")
                         if test[0] not in ("y", "Y"):
                             raise SqlmapSilentQuitException
@@ -1038,6 +1038,10 @@ def setPaths():
     paths.SQLMAP_XML_PATH = os.path.join(paths.SQLMAP_ROOT_PATH, "xml")
     paths.SQLMAP_XML_BANNER_PATH = os.path.join(paths.SQLMAP_XML_PATH, "banner")
     paths.SQLMAP_OUTPUT_PATH = paths.get("SQLMAP_OUTPUT_PATH", os.path.join(paths.SQLMAP_ROOT_PATH, "output"))
+
+    if not os.access(paths.SQLMAP_OUTPUT_PATH, os.W_OK):
+        paths.SQLMAP_OUTPUT_PATH = os.path.join(os.path.expanduser("~"), ".sqlmap", "output")
+
     paths.SQLMAP_DUMP_PATH = os.path.join(paths.SQLMAP_OUTPUT_PATH, "%s", "dump")
     paths.SQLMAP_FILES_PATH = os.path.join(paths.SQLMAP_OUTPUT_PATH, "%s", "files")
 
@@ -1990,7 +1994,10 @@ def getUnicode(value, encoding=None, system=False, noneToNull=False):
                 except UnicodeDecodeError, ex:
                     value = value[:ex.start] + "".join(INVALID_UNICODE_CHAR_FORMAT % ord(_) for _ in value[ex.start:ex.end]) + value[ex.end:]
         else:
-            return unicode(value)  # encoding ignored for non-basestring instances
+            try:
+                return unicode(value)
+            except UnicodeDecodeError:
+                return unicode(str(value), errors="ignore")  # encoding ignored for non-basestring instances
     else:
         try:
             return getUnicode(value, sys.getfilesystemencoding() or sys.stdin.encoding)
@@ -2212,6 +2219,12 @@ def urlencode(value, safe="%&=-_", convall=False, limit=False, spaceplus=False):
     result = None if value is None else ""
 
     if value:
+        if Backend.isDbms(DBMS.MSSQL) and not kb.tamperFunctions and any(ord(_) > 255 for _ in value):
+            warnMsg = "if you experience problems with "
+            warnMsg += "non-ASCII identifier names "
+            warnMsg += "you are advised to rerun with '--tamper=charunicodeencode'"
+            singleTimeWarnMessage(warnMsg)
+
         if convall or safe is None:
             safe = ""
 

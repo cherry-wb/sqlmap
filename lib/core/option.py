@@ -75,6 +75,7 @@ from lib.core.enums import DUMP_FORMAT
 from lib.core.enums import HTTP_HEADER
 from lib.core.enums import HTTPMETHOD
 from lib.core.enums import MOBILES
+from lib.core.enums import OPTION_TYPE
 from lib.core.enums import PAYLOAD
 from lib.core.enums import PRIORITY
 from lib.core.enums import PROXY_TYPE
@@ -120,6 +121,7 @@ from lib.core.settings import PGSQL_ALIASES
 from lib.core.settings import PROBLEMATIC_CUSTOM_INJECTION_PATTERNS
 from lib.core.settings import SITE
 from lib.core.settings import SQLITE_ALIASES
+from lib.core.settings import SQLMAP_ENVIRONMENT_PREFIX
 from lib.core.settings import SUPPORTED_DBMS
 from lib.core.settings import SUPPORTED_OS
 from lib.core.settings import SYBASE_ALIASES
@@ -1604,6 +1606,7 @@ def _setKnowledgeBaseAttributes(flushAll=True):
     kb.chars.stop = "%s%s%s" % (KB_CHARS_BOUNDARY_CHAR, randomStr(length=3, lowercase=True), KB_CHARS_BOUNDARY_CHAR)
     kb.chars.at, kb.chars.space, kb.chars.dollar, kb.chars.hash_ = ("%s%s%s" % (KB_CHARS_BOUNDARY_CHAR, _, KB_CHARS_BOUNDARY_CHAR) for _ in randomStr(length=4, lowercase=True))
 
+    kb.columnExistsChoice = None
     kb.commonOutputs = None
     kb.counters = {}
     kb.data = AttribDict()
@@ -1702,6 +1705,7 @@ def _setKnowledgeBaseAttributes(flushAll=True):
     kb.testQueryCount = 0
     kb.threadContinue = True
     kb.threadException = False
+    kb.tableExistsChoice = None
     kb.timeValidCharsRun = 0
     kb.uChar = NULL
     kb.unionDuplicates = False
@@ -1738,7 +1742,7 @@ def _useWizardInterface():
         message = "POST data (--data) [Enter for None]: "
         conf.data = readInput(message, default=None)
 
-        if filter(lambda x: '=' in str(x), [conf.url, conf.data]) or '*' in conf.url:
+        if filter(lambda _: '=' in unicode(_), (conf.url, conf.data)) or '*' in conf.url:
             break
         else:
             warnMsg = "no GET and/or POST parameter(s) found for testing "
@@ -1823,16 +1827,14 @@ def _saveCmdline():
                 datatype = datatype[0]
 
             if value is None:
-                if datatype == "boolean":
+                if datatype == OPTION_TYPE.BOOLEAN:
                     value = "False"
-                elif datatype in ("integer", "float"):
-                    if option in ("threads", "verbose"):
-                        value = "1"
-                    elif option == "timeout":
-                        value = "10"
+                elif datatype in (OPTION_TYPE.INTEGER, OPTION_TYPE.FLOAT):
+                    if option in defaults:
+                        value = str(defaults[option])
                     else:
                         value = "0"
-                elif datatype == "string":
+                elif datatype == OPTION_TYPE.STRING:
                     value = ""
 
             if isinstance(value, basestring):
@@ -1901,6 +1903,37 @@ def _mergeOptions(inputOptions, overrideOptions):
 
     for key, value in defaults.items():
         if hasattr(conf, key) and conf[key] is None:
+            conf[key] = value
+
+    _ = {}
+    for key, value in os.environ.items():
+        if key.upper().startswith(SQLMAP_ENVIRONMENT_PREFIX):
+            _[key[len(SQLMAP_ENVIRONMENT_PREFIX):].upper()] = value
+
+    types_ = {}
+    for group in optDict.keys():
+        types_.update(optDict[group])
+
+    for key in conf:
+        if key.upper() in _:
+            value = _[key.upper()]
+
+            if types_[key] == OPTION_TYPE.BOOLEAN:
+                try:
+                    value = bool(value)
+                except ValueError:
+                    value = False
+            elif types_[key] == OPTION_TYPE.INTEGER:
+                try:
+                    value = int(value)
+                except ValueError:
+                    value = 0
+            elif types_[key] == OPTION_TYPE.FLOAT:
+                try:
+                    value = float(value)
+                except ValueError:
+                    value = 0.0
+
             conf[key] = value
 
     mergedOptions.update(conf)
